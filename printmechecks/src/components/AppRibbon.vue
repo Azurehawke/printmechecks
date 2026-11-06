@@ -120,6 +120,13 @@
                     </div>
                     <div class="group-label">Manage</div>
                 </div>
+                <div class="group">
+                    <div class="group-items">
+                        <button class="big" title="Save your accounts and printer alignment to a file (e.g. for the Obsidian plugin)" @click="exportAccounts"><i class="bi bi-box-arrow-up"></i>Export…</button>
+                        <button class="big" title="Load accounts from an export file" @click="importAccounts"><i class="bi bi-box-arrow-in-down"></i>Import…</button>
+                    </div>
+                    <div class="group-label">Transfer</div>
+                </div>
             </template>
 
             <!-- REGISTER -->
@@ -243,6 +250,32 @@ function confirmReset () {
 function removeAccount () {
     const a = store.account
     if (confirm(`Delete the account "${accountTitle(a)}"? Checks already in the register are kept.`)) store.deleteAccount(a.id)
+}
+
+// ----- Accounts transfer -----
+function exportAccounts () {
+    if (!confirm('The export file contains your full account and routing numbers. Keep it somewhere safe and delete it after importing.\n\nContinue?')) return
+    const blob = new Blob([JSON.stringify(store.exportAccounts(), null, 2)], { type: 'application/json' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = 'Print Me Checks accounts.json'
+    a.click()
+    URL.revokeObjectURL(a.href)
+}
+function importAccounts () {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = '.json,application/json'
+    input.onchange = async () => {
+        const f = input.files?.[0]
+        if (!f) return
+        try {
+            store.importAccounts(await f.text())
+        } catch (e) {
+            store.notify('Import failed: ' + (e as Error).message)
+        }
+    }
+    input.click()
 }
 
 // ----- Register export -----

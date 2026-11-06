@@ -522,6 +522,40 @@ export const useAppStore = defineStore('app', () => {
     return true
   }
 
+  // ----- Import / export (shared format with the Obsidian plugin) -----
+
+  function exportAccounts () {
+    const layout = {
+      fontFamily: settings.fontFamily, fontSize: settings.fontSize, boldValues: settings.boldValues,
+      offsetX: settings.offsetX, offsetY: settings.offsetY, fieldOffsets: settings.fieldOffsets
+    }
+    return { app: 'printmechecks', version: 1, exportedAt: new Date().toISOString(), accounts: accounts.value, layout }
+  }
+
+  function importAccounts (text: string) {
+    let data: { app?: string, accounts?: Account[], layout?: Partial<Settings> }
+    try { data = JSON.parse(text) } catch { throw new Error('That file isn\'t valid JSON.') }
+    if (!data || data.app !== 'printmechecks' || !Array.isArray(data.accounts)) {
+      throw new Error('That isn\'t a Print Me Checks accounts export.')
+    }
+    let added = 0
+    let updated = 0
+    for (const raw of data.accounts) {
+      const a: Account = { ...blankAccount(), ...raw, id: raw.id || newId() }
+      const i = accounts.value.findIndex(x => x.id === a.id ||
+        (x.routingNumber && x.routingNumber === a.routingNumber && x.accountNumber === a.accountNumber))
+      if (i >= 0) { accounts.value[i] = a; updated++ } else { accounts.value.push(a); added++ }
+    }
+    if (data.layout) {
+      const l = data.layout
+      for (const k of ['fontFamily', 'fontSize', 'boldValues', 'offsetX', 'offsetY', 'fieldOffsets'] as const) {
+        if (l[k] !== undefined) (settings as unknown as Record<string, unknown>)[k] = l[k]
+      }
+    }
+    if (!accounts.value.some(a => a.id === activeAccountId.value)) activeAccountId.value = accounts.value[0].id
+    notify(`Imported accounts: ${added} added, ${updated} updated.${data.layout ? ' Font and alignment settings too.' : ''}`)
+  }
+
   // ----- Layout actions -----
 
   function nudgeField (key: string, dx: number, dy: number) {
@@ -554,6 +588,7 @@ export const useAppStore = defineStore('app', () => {
     tool, selectedField, editingAccount, toast,
     notify, newCheck, switchAccount, saveToRegister, openFromRegister, deleteFromRegister,
     refreshRegisterFile, connectRegisterFile, disconnectRegisterFile, setStatus,
+    exportAccounts, importAccounts,
     startNewAccount, startEditAccount, saveAccount, duplicateAccount, deleteAccount,
     nudgeField, resetField, resetLayout, resetFont
   }

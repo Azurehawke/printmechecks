@@ -67,6 +67,10 @@ npm install
   (Shift for 10×). **Layout → Shift Whole Check** moves everything at once to
   match your printer's feed.
 * The signature line is left blank for signing by hand.
+* **Accounts → Export… / Import…** saves your accounts and printer alignment to
+  a file, e.g. to use them in the
+  [Obsidian plugin](https://github.com/Azurehawke/obsidian-printmechecks). The
+  file contains full account numbers; delete it after importing.
 
 ### Register in an .xlsx file (desktop app)
 
