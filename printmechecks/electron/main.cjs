@@ -1,7 +1,7 @@
 // Electron entry point: runs Print Me Checks as a local desktop app.
 // Everything (fonts, Bootstrap, MICR font) is bundled, so the app works
 // fully offline and your account numbers never leave the machine.
-const { app, BrowserWindow, Menu, shell, ipcMain, dialog } = require('electron')
+const { app, BrowserWindow, Menu, shell, ipcMain, dialog, session } = require('electron')
 const fs = require('fs')
 const os = require('os')
 const path = require('path')
@@ -65,14 +65,32 @@ function closePreview () {
   fs.rm(pdfPath, { force: true }, () => {})
 }
 
+function renderPdf (contents) {
+  return contents.printToPDF({ ...PRINT_OPTIONS, printBackground: false, preferCSSPageSize: true })
+}
+
+async function askAndSavePdf (parent, pdf, name) {
+  const { canceled, filePath } = await dialog.showSaveDialog(parent, {
+    title: 'Save check as PDF',
+    defaultPath: path.join(app.getPath('documents'), `${name}.pdf`),
+    filters: [{ name: 'PDF', extensions: ['pdf'] }]
+  })
+  if (canceled || !filePath) return false
+  fs.writeFileSync(filePath, pdf)
+  return true
+}
+
+// Save as PDF straight from the main window (no preview).
+ipcMain.handle('save-pdf', async (event, name) => {
+  const owner = BrowserWindow.fromWebContents(event.sender)
+  const pdf = await renderPdf(event.sender)
+  return askAndSavePdf(owner, pdf, safeName(name))
+})
+
 ipcMain.handle('print-preview', async (event, name) => {
   const owner = BrowserWindow.fromWebContents(event.sender)
   closePreview()
-  const pdf = await event.sender.printToPDF({
-    ...PRINT_OPTIONS,
-    printBackground: false,
-    preferCSSPageSize: true
-  })
+  const pdf = await renderPdf(event.sender)
   const pdfPath = path.join(os.tmpdir(), `printmechecks-preview-${Date.now()}.pdf`)
   fs.writeFileSync(pdfPath, pdf)
 
@@ -125,19 +143,12 @@ ipcMain.handle('preview-print', async () => {
 ipcMain.handle('preview-save-pdf', async () => {
   if (!preview) return
   const { win, pdf, name } = preview
-  const { canceled, filePath } = await dialog.showSaveDialog(win, {
-    title: 'Save check as PDF',
-    defaultPath: path.join(app.getPath('documents'), `${name}.pdf`),
-    filters: [{ name: 'PDF', extensions: ['pdf'] }]
-  })
-  if (canceled || !filePath) return
-  fs.writeFileSync(filePath, pdf)
-  closePreview()
+  if (await askAndSavePdf(win, pdf, name)) closePreview()
 })
 
 ipcMain.handle('preview-close', () => closePreview())
 
-// Minimal menu: keeps standard shortcuts (copy/paste, zoom, reload)
+// Minimal menu: keeps standard shortcuts (copy/paste, reload)
 // without a cluttered menu bar. Ctrl+P is handled by the page itself.
 const menu = Menu.buildFromTemplate([
   { role: 'fileMenu' },
@@ -145,10 +156,8 @@ const menu = Menu.buildFromTemplate([
   {
     label: 'View',
     submenu: [
+      // Ctrl +/-/0 zoom the check itself (handled by the page)
       { role: 'reload' },
-      { role: 'resetZoom' },
-      { role: 'zoomIn' },
-      { role: 'zoomOut' },
       { type: 'separator' },
       { role: 'togglefullscreen' },
       { role: 'toggleDevTools' }
@@ -169,6 +178,12 @@ const menu = Menu.buildFromTemplate([
 Menu.setApplicationMenu(menu)
 
 app.whenReady().then(() => {
+  // Let the Text tab list the fonts installed on this computer.
+  session.defaultSession.setPermissionRequestHandler((wc, permission, callback) => {
+    callback(['local-fonts', 'clipboard-sanitized-write', 'fullscreen'].includes(permission))
+  })
+  session.defaultSession.setPermissionCheckHandler((wc, permission) =>
+    ['local-fonts', 'clipboard-sanitized-write', 'fullscreen'].includes(permission))
   createWindow()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

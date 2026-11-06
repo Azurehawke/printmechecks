@@ -5,5 +5,7 @@ const { contextBridge, ipcRenderer } = require('electron')
 contextBridge.exposeInMainWorld('pmc', {
   isDesktop: true,
   // Opens the print preview window. `name` is the suggested PDF file name.
-  printPreview: (name) => ipcRenderer.invoke('print-preview', String(name || 'check'))
+  printPreview: (name) => ipcRenderer.invoke('print-preview', String(name || 'check')),
+  // Saves the check as a PDF without opening the preview.
+  savePdf: (name) => ipcRenderer.invoke('save-pdf', String(name || 'check'))
 })

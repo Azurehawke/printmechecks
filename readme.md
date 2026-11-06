@@ -49,6 +49,25 @@ Install JS dependencies
 npm install
 ```
 
+## Using the app
+
+* **Ribbon** (top): **Home** (print, save PDF, new check, save to register),
+  **Text** (one font and size for the whole check), **Layout** (move fields,
+  shift the whole check to line up with your printer), **Accounts** (saved bank
+  accounts), **Register** (saved checks, search, CSV export).
+* **Tools** (left): select/move fields, pan, zoom, field outlines, background.
+* **Check details** (right): account, check number, date, payee, amount, memo.
+* **Accounts:** enter each bank account once; it's remembered, along with its
+  next check number. Switch accounts from the dropdown.
+* **Check numbers** can use any format, e.g. `100` or `100-0001`. After you save
+  a check to the register, the last group of digits counts up and keeps its
+  leading zeros (`100-0001` → `100-0002`). On the MICR line a dash prints as the
+  MICR dash symbol.
+* **Moving fields:** with the select tool, click a field and use the arrow keys
+  (Shift for 10×). **Layout → Shift Whole Check** moves everything at once to
+  match your printer's feed.
+* The signature line is left blank for signing by hand.
+
 ## Windows desktop app
 
 Print Me Checks can run as a regular Windows 11 app. It runs fully offline:

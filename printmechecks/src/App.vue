@@ -1,65 +1,66 @@
 <script setup lang="ts">
-import { RouterLink, RouterView } from 'vue-router'
+import { RouterView } from 'vue-router'
+import { useAppStore, accountTitle } from './stores/app'
+import AppRibbon from './components/AppRibbon.vue'
+import AccountDialog from './components/AccountDialog.vue'
+
+const store = useAppStore()
 </script>
 
 <template>
-
-    <div class="container app-container no-print">
-        <div style="padding-bottom: 20px; padding-top: 20px;">
-            <img src="@/assets/pmc.png"  />
-        </div>
-        <ul class="nav nav-tabs">
-            <li class="nav-item">
-                <RouterLink to="/" class="nav-link" :class="{'active': $route.path == '/'}">Check</RouterLink>
-            </li>
-            <li class="nav-item">
-                <RouterLink to="/history" class="nav-link" :class="{'active': $route.path == '/history'}">History</RouterLink>
-            </li>
-        </ul>
-      <nav>
-      </nav>
-    </div>
-
-    <div class="container app-container">
-      <RouterView />
+    <div class="app-shell">
+        <AppRibbon />
+        <RouterView />
+        <footer class="status no-print">
+            <span><i class="bi bi-bank"></i> {{ accountTitle(store.account) }}</span>
+            <span>Next check #{{ store.account.nextCheckNumber }}</span>
+            <span class="spacer"></span>
+            <span>The check background and field outlines never print.</span>
+        </footer>
+        <transition name="fade">
+            <div v-if="store.toast" class="toast-msg no-print">{{ store.toast }}</div>
+        </transition>
+        <AccountDialog />
     </div>
 </template>
 
 <style>
-/* The check preview is a fixed 1200px canvas; keep the page wide enough
-   for it at every window size (narrow windows scroll sideways instead of
-   squeezing the check). */
-.app-container {
-  max-width: 1250px !important;
-  min-width: 1250px;
+html, body, #app {
+    height: 100%;
 }
-</style>
-
-<style scoped>
-
-nav {
-  width: 100%;
-  font-size: 12px;
-  text-align: center;
-  margin-top: 2rem;
+body {
+    overflow: hidden;
 }
-
-nav a.router-link-exact-active {
-  color: var(--color-text);
+.app-shell {
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    min-width: 900px;
 }
-
-nav a.router-link-exact-active:hover {
-  background-color: transparent;
+.status {
+    flex: 0 0 auto;
+    display: flex;
+    gap: 18px;
+    align-items: center;
+    padding: 3px 12px;
+    font-size: 12px;
+    color: #f0f4fa;
+    background: #2b579a;
 }
-
-nav a {
-  display: inline-block;
-  padding: 0 1rem;
-  border-left: 1px solid var(--color-border);
+.status .spacer { flex: 1; }
+.toast-msg {
+    position: fixed;
+    bottom: 36px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #323232;
+    color: white;
+    padding: 9px 18px;
+    border-radius: 6px;
+    font-size: 14px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, .25);
+    z-index: 60;
 }
-
-nav a:first-of-type {
-  border: 0;
-}
-
+.fade-enter-active, .fade-leave-active { transition: opacity .2s; }
+.fade-enter-from, .fade-leave-to { opacity: 0; }
 </style>
