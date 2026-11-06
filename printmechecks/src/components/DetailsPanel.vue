@@ -15,7 +15,7 @@
             <div class="row g-2">
                 <div class="col-5">
                     <label class="form-label">Check #</label>
-                    <input class="form-control form-control-sm" v-model="check.checkNumber" inputmode="numeric">
+                    <input class="form-control form-control-sm" v-model="check.checkNumber" inputmode="numeric" @focus="store.beginCheckNumberEdit()" @change="store.lookupCheckNumber()">
                 </div>
                 <div class="col-7">
                     <label class="form-label">Date</label>

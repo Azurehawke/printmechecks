@@ -335,8 +335,40 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
+  // A check number already in the register for this account (any status,
+  // including Void). Matched by account id, or by routing + account number.
+  function findExisting (a: Account, checkNumber: string): RegisterEntry | undefined {
+    const n = checkNumber.trim()
+    if (!n) return undefined
+    return register.value.find(e => e.checkNumber.trim() === n &&
+      (e.accountId ? e.accountId === a.id : e.accountLast4 === last4(a.accountNumber)))
+  }
+
+  // Called when the check-number field is focused, so a lookup only fires
+  // if the number was actually changed.
+  let numberOnFocus = ''
+  function beginCheckNumberEdit () {
+    numberOnFocus = check.checkNumber
+  }
+
+  // Typing an existing check number pulls up that check instead of starting a
+  // duplicate. Printing is unaffected; saving a duplicate is blocked below.
+  function lookupCheckNumber () {
+    const n = check.checkNumber.trim()
+    if (!n || n === numberOnFocus.trim()) return
+    const e = findExisting(account.value, n)
+    if (!e) return
+    openFromRegister(e)
+    notify(`Check #${n} is already in the register (${e.status || 'Issued'}). Loaded it. To correct it, void it on the Register tab and make a new check.`)
+  }
+
   async function saveToRegister () {
     const a = account.value
+    const dup = findExisting(a, check.checkNumber)
+    if (dup) {
+      notify(`Check #${check.checkNumber} is already in the register for this account, so it was not saved again. Void it on the Register tab, or change the check number.`)
+      return
+    }
     const entry = entryForAccount(a)
     localRegister.value.push(entry)
     // Advance the account's next number, unless this was an older check
@@ -589,6 +621,7 @@ export const useAppStore = defineStore('app', () => {
     accounts, activeAccountId, account, settings, check,
     tool, selectedField, editingAccount, toast,
     notify, newCheck, switchAccount, saveToRegister, openFromRegister, deleteFromRegister,
+    beginCheckNumberEdit, lookupCheckNumber,
     refreshRegisterFile, connectRegisterFile, disconnectRegisterFile, setStatus,
     exportAccounts, importAccounts,
     startNewAccount, startEditAccount, saveAccount, duplicateAccount, deleteAccount,
