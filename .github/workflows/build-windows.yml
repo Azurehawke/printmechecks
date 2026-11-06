@@ -51,9 +51,15 @@ jobs:
           if [ "${{ github.event_name }}" != "push" ]; then
             echo "Manual run: build only."
             echo "publish=false" >> "$GITHUB_OUTPUT"
-          elif gh release view "$version" -R "${{ github.repository }}" >/dev/null 2>&1; then
-            echo "Release $version already exists: build only. Bump the version in package.json to publish."
-            echo "publish=false" >> "$GITHUB_OUTPUT"
+          elif assets=$(gh release view "$version" -R "${{ github.repository }}" --json assets --jq '.assets[].name' 2>/dev/null); then
+            if echo "$assets" | grep -qx 'latest.yml' && echo "$assets" | grep -q 'Setup.*\.exe$'; then
+              echo "Release $version already exists: build only. Bump the version in package.json to publish."
+              echo "publish=false" >> "$GITHUB_OUTPUT"
+            else
+              echo "Release $version exists but is incomplete (no installer or latest.yml); recreating it."
+              gh release delete "$version" -R "${{ github.repository }}" --yes
+              echo "publish=true" >> "$GITHUB_OUTPUT"
+            fi
           else
             echo "Publishing new release $version."
             echo "publish=true" >> "$GITHUB_OUTPUT"
