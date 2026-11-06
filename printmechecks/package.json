@@ -11,8 +11,7 @@
     "lint": "eslint . --ext .vue,.js,.jsx,.cjs,.mjs,.ts,.tsx,.cts,.mts --fix --ignore-path .gitignore",
     "format": "prettier --write src/",
     "app": "vite build && electron .",
-    "dist:win": "vite build && electron-builder --win --publish never",
-    "release:win": "vite build && electron-builder --win --publish always"
+    "dist:win": "vite build && electron-builder --win --publish never"
   },
   "dependencies": {
     "electron-updater": "^6.8.11"

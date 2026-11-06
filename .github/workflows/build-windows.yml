@@ -51,42 +51,48 @@ jobs:
           if [ "${{ github.event_name }}" != "push" ]; then
             echo "Manual run: build only."
             echo "publish=false" >> "$GITHUB_OUTPUT"
-          elif assets=$(gh release view "$version" -R "${{ github.repository }}" --json assets --jq '.assets[].name' 2>/dev/null); then
-            if echo "$assets" | grep -qx 'latest.yml' && echo "$assets" | grep -q 'Setup.*\.exe$'; then
-              echo "Release $version already exists: build only. Bump the version in package.json to publish."
-              echo "publish=false" >> "$GITHUB_OUTPUT"
-            else
-              echo "Release $version exists but is incomplete (no installer or latest.yml); recreating it."
-              gh release delete "$version" -R "${{ github.repository }}" --yes
-              echo "publish=true" >> "$GITHUB_OUTPUT"
-            fi
+            exit 0
+          fi
+          # A release is complete when exactly one release has this tag and it
+          # carries the installer and latest.yml (what installed apps read).
+          releases=$(gh api "repos/${{ github.repository }}/releases?per_page=100" \
+            --jq "[.[] | select(.tag_name == \"$version\")]")
+          count=$(echo "$releases" | jq 'length')
+          complete=$(echo "$releases" | jq '[.[] | select(any(.assets[]; .name == "latest.yml") and any(.assets[]; .name | test("Setup.*\\.exe$")))] | length')
+          if [ "$count" = "1" ] && [ "$complete" = "1" ]; then
+            echo "Release $version already exists: build only. Bump the version in package.json to publish."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
           else
-            echo "Publishing new release $version."
+            echo "Publishing $version ($count existing release(s) with this tag will be replaced)."
             echo "publish=true" >> "$GITHUB_OUTPUT"
           fi
 
       - run: npm ci
 
-      - name: Create tag ${{ steps.release.outputs.version }}
-        if: steps.release.outputs.publish == 'true'
-        run: |
-          tag="${{ steps.release.outputs.version }}"
-          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null; then
-            echo "Tag $tag already exists."
-          else
-            git tag "$tag" "$GITHUB_SHA"
-            git push origin "refs/tags/$tag"
-          fi
+      - name: Build
+        run: npm run dist:win
 
-      - name: Build and publish release ${{ steps.release.outputs.version }}
+      - name: Publish release ${{ steps.release.outputs.version }}
         if: steps.release.outputs.publish == 'true'
-        run: npm run release:win
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build only
-        if: steps.release.outputs.publish != 'true'
-        run: npm run dist:win
+        run: |
+          tag="${{ steps.release.outputs.version }}"
+          # Remove any earlier or partial releases for this tag (keeps the tag).
+          for id in $(gh api "repos/${{ github.repository }}/releases?per_page=100" --jq ".[] | select(.tag_name == \"$tag\") | .id"); do
+            gh api -X DELETE "repos/${{ github.repository }}/releases/$id"
+          done
+          # One call uploads everything, so there is exactly one release.
+          # Creates the tag on this commit if it doesn't exist yet.
+          gh release create "$tag" \
+            release/PrintMeChecks-Setup-*.exe \
+            release/PrintMeChecks-Setup-*.exe.blockmap \
+            release/PrintMeChecks-*-portable.exe \
+            release/latest.yml \
+            --repo "${{ github.repository }}" \
+            --target "$GITHUB_SHA" \
+            --title "Print Me Checks $tag" \
+            --generate-notes
 
       - uses: actions/upload-artifact@v4
         with:
