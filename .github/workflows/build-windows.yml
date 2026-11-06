@@ -61,6 +61,17 @@ jobs:
 
       - run: npm ci
 
+      - name: Create tag ${{ steps.release.outputs.version }}
+        if: steps.release.outputs.publish == 'true'
+        run: |
+          tag="${{ steps.release.outputs.version }}"
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null; then
+            echo "Tag $tag already exists."
+          else
+            git tag "$tag" "$GITHUB_SHA"
+            git push origin "refs/tags/$tag"
+          fi
+
       - name: Build and publish release ${{ steps.release.outputs.version }}
         if: steps.release.outputs.publish == 'true'
         run: npm run release:win
