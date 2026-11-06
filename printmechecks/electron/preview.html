@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' file:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; frame-src file:">
+<title>Print Preview</title>
+<style>
+  html, body { margin: 0; height: 100%; font-family: "Segoe UI", system-ui, sans-serif; background: #525659; }
+  .bar {
+    position: fixed; top: 0; left: 0; right: 0; height: 52px;
+    display: flex; align-items: center; gap: 10px; padding: 0 16px;
+    background: #f3f3f3; border-bottom: 1px solid #d0d0d0; box-sizing: border-box;
+  }
+  .title { font-weight: 600; margin-right: auto; color: #222; }
+  .hint { color: #555; font-size: 13px; margin-right: 12px; }
+  button {
+    font: inherit; font-size: 14px; padding: 7px 18px; border-radius: 4px;
+    border: 1px solid #b5b5b5; background: white; cursor: pointer;
+  }
+  button:hover { background: #e9e9e9; }
+  button.primary { background: #0d6efd; border-color: #0d6efd; color: white; }
+  button.primary:hover { background: #0b5ed7; }
+  button:disabled { opacity: .6; cursor: default; }
+  iframe { position: fixed; top: 52px; left: 0; width: 100%; height: calc(100% - 52px); border: 0; }
+</style>
+</head>
+<body>
+  <div class="bar">
+    <span class="title">Print Preview</span>
+    <span class="hint">Letter, no margins, 100% scale</span>
+    <button id="close">Close</button>
+    <button id="save">Save as PDF…</button>
+    <button id="print" class="primary">Print…</button>
+  </div>
+  <iframe id="pdf" title="Check preview"></iframe>
+<script>
+  const params = new URLSearchParams(location.search)
+  document.getElementById('pdf').src = params.get('pdf') + '#toolbar=0&navpanes=0&view=Fit'
+  const btns = [...document.querySelectorAll('button')]
+  async function run (fn) {
+    btns.forEach(b => (b.disabled = true))
+    try { await fn() } finally { btns.forEach(b => (b.disabled = false)) }
+  }
+  document.getElementById('print').onclick = () => run(window.preview.print)
+  document.getElementById('save').onclick = () => run(window.preview.savePdf)
+  document.getElementById('close').onclick = () => window.preview.close()
+  addEventListener('keydown', e => {
+    if (e.key === 'Escape') window.preview.close()
+    if (e.ctrlKey && e.key.toLowerCase() === 'p') { e.preventDefault(); run(window.preview.print) }
+  })
+</script>
+</body>
+</html>

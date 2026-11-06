@@ -1,3 +1,5 @@
+import 'bootstrap/dist/css/bootstrap.min.css'
+import '@fontsource/caveat/400.css'
 import './assets/main.css'
 
 import { createApp } from 'vue'

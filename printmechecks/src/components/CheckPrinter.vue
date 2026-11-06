@@ -8,16 +8,16 @@
                     {{check.accountHolderCity}}, {{check.accountHolderState}} {{check.accountHolderZip}}
                 </div>
                 <div class="check-number-human" style="position: absolute; top: 40px; left: 1060px">{{check.checkNumber}}</div>
+                <div class="date" style="position: absolute; top: 90px; left: 760px">Date: <span class="date-line"></span></div>
                 <div class="date-data" style="position: absolute; top: 80px; left: 850px">{{check.date}}</div>
-                <div class="date" style="position: absolute; top: 90px; left: 760px">Date: _____________________ </div>
                 <div class="amount-box" style="position: absolute; top: 175px; left: 950px">
 
                 </div>
                 <div class="amount-data" style="position: absolute; top: 182px; left: 970px">{{formatMoney(check.amount)}}</div>
-                <div class="pay-to-data" style="position: absolute; top: 180px; left: 180px">{{check.payTo}}</div>
                 <div class="pay-to" style="position: absolute; top: 170px; left: 60px">
                     Pay to the <br>Order of <span class="payto-line"></span>
                 </div>
+                <div class="pay-to-data" style="position: absolute; top: 180px; left: 180px">{{check.payTo}}</div>
                 <div class="amount-line-data" ref="line" style="position: absolute; top: 240px; left: 100px">
                     ***
                     {{toWords(check.amount)}} 
@@ -145,47 +145,18 @@ const toWords: (denom: number | string) => string = (denom) => {
     }
 }
 
+// Print styles live in the <style> block below (media print), so they also
+// apply when printing from the browser menu, not just this button.
+// In the desktop app, Print opens our own preview window first (Electron
+// has no built-in print preview); in a browser it uses the browser's.
 function printCheck () {
-    const style = document.createElement('style');
-    style.textContent = `
-      @media print {
-        @page {
-          margin: 0;
-        }
-        body {
-          transform: scale(1);
-          transform-origin: top center;
-          width: 149%;
-          margin: 0;
-          padding: 0;
-        }
-        .wrapper > *:not(.check-box) {
-          display: none !important;
-        }
-        .check-data {
-            display: none;
-        }
-        .check-box {
-          position: fixed;
-          top: 0;
-          left: 0;
-          width: 100%;
-          height: 100%;
-          margin: 0;
-          padding: 0px;
-          background-color: white;
-          background: white !important;
-          border: none !important;
-          box-shadow: none !important;
-        }
-        .check-box-print {
-          position: relative;
-        }
-      }
-    `;
-    document.head.appendChild(style);
-    window.print();
-    style.remove();
+    const desktop = (window as any).pmc
+    if (desktop?.printPreview) {
+        const name = `Check ${check.checkNumber || ''} ${check.payTo || ''}`.trim()
+        desktop.printPreview(name)
+    } else {
+        window.print();
+    }
 }
 
 function saveToHistory () {
@@ -316,18 +287,14 @@ label {
     background-color: white;
 }
 .check-box {
+    /* Fixed canvas: every field is positioned in px against a 1200px-wide
+       check, so the preview must not stretch or shrink with the window. */
     width: 1200px;
     height: 1553px;
     border: 1px solid #e6e6e6;
-    background-color: white;
     margin: 0 auto;
-    background: url('../assets/checkbg.png');
-    background-repeat: no-repeat;
-    background-size: contain;
-}
-
-#check-box {
-    width: 100%;
+    background: white url('../assets/checkbg.png') no-repeat top left;
+    background-size: 1200px auto;
 }
 
 @font-face {
@@ -354,6 +321,15 @@ label {
     margin-left: 10px;
     margin-top: 20px;
 }
+.date {
+    white-space: nowrap;
+}
+.date-line {
+    display: inline-block;
+    width: 190px;
+    border-bottom: 1px solid black;
+    vertical-align: baseline;
+}
 .payto-line {
     width: 776px;
     display: block;
@@ -362,5 +338,55 @@ label {
     border-right: 1px solid black;
     height: 28px;
     margin-top: -32px;
+}
+</style>
+
+<style>
+/* Print only the check. Everything else on the page (app header, tabs,
+   form, and any banner a web host injects) is hidden rather than just
+   covered by a white box, so nothing can bleed into the printed check. */
+@media print {
+    @page {
+        margin: 0;
+    }
+    html, body {
+        margin: 0 !important;
+        padding: 0 !important;
+        background: white !important;
+    }
+    body * {
+        visibility: hidden !important;
+    }
+    /* Don't let the on-screen fixed-width layout widen the printed page
+       (that would trigger the browser's shrink-to-fit and move the check). */
+    .app-container {
+        min-width: 0 !important;
+        max-width: none !important;
+    }
+    .no-print,
+    .check-data {
+        display: none !important;
+    }
+    #check-box-print,
+    #check-box-print * {
+        visibility: visible !important;
+    }
+    /* The check is laid out on a 1216px-wide canvas and printed at
+       816/1216 scale onto a Letter page (816 CSS px wide). This matches
+       where the original layout landed on check stock, but no longer
+       depends on the browser's shrink-to-fit guess. */
+    .check-box {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 1216px !important;
+        height: auto;
+        zoom: 0.671053;
+        margin: 0;
+        padding: 0;
+        background: none !important;
+        border: none !important;
+        box-shadow: none !important;
+    }
 }
 </style>

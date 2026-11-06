@@ -4,7 +4,7 @@ import { RouterLink, RouterView } from 'vue-router'
 
 <template>
 
-    <div class="container">
+    <div class="container app-container no-print">
         <div style="padding-bottom: 20px; padding-top: 20px;">
             <img src="@/assets/pmc.png"  />
         </div>
@@ -20,10 +20,20 @@ import { RouterLink, RouterView } from 'vue-router'
       </nav>
     </div>
 
-    <div class="container">
+    <div class="container app-container">
       <RouterView />
     </div>
 </template>
+
+<style>
+/* The check preview is a fixed 1200px canvas; keep the page wide enough
+   for it at every window size (narrow windows scroll sideways instead of
+   squeezing the check). */
+.app-container {
+  max-width: 1250px !important;
+  min-width: 1250px;
+}
+</style>
 
 <style scoped>
 
