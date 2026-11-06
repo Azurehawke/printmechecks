@@ -34,6 +34,12 @@
                 <span class="bank-account">{{ account.accountNumber }}c</span>
                 <span class="check-number">{{ micrCheckNumber(check.checkNumber) }}</span>
             </div>
+
+            <div v-if="settings.showStub" class="check-stub">
+                <div>Check No. {{ check.checkNumber }} &nbsp;&nbsp;&nbsp; Date: {{ check.date }}</div>
+                <div>Pay to: {{ check.payTo }} &nbsp;&nbsp;&nbsp; Amount: {{ formatMoney(check.amount) }}</div>
+                <div>Memo: {{ check.memo }}</div>
+            </div>
         </div>
     </div>
 </template>
@@ -106,6 +112,14 @@ function fld (key: string) {
 }
 .check-text .val {
     font-weight: var(--val-weight, bold);
+}
+/* Stub lines under the check, starting just below the first perforation */
+.check-stub {
+    position: absolute;
+    top: 530px;
+    left: 60px;
+    white-space: nowrap;
+    line-height: 1.6;
 }
 .holder-name, .check-number-human, .date-data, .pay-to-data, .amount-data, .bank-name {
     font-size: 1.25em;

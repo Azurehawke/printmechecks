@@ -96,6 +96,12 @@
                 </div>
                 <div class="group">
                     <div class="group-items">
+                        <button class="big" :class="{ on: settings.showStub }" @click="settings.showStub = !settings.showStub"><i class="bi bi-receipt"></i>Check stub</button>
+                    </div>
+                    <div class="group-label">Print</div>
+                </div>
+                <div class="group">
+                    <div class="group-items">
                         <button class="big" @click="confirmReset"><i class="bi bi-arrow-counterclockwise"></i>Reset<br>Layout</button>
                     </div>
                     <div class="group-label">Reset</div>

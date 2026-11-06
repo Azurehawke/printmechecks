@@ -37,6 +37,7 @@ export interface Settings {
   fieldOffsets: Record<string, FieldOffset> // per-field nudges, canvas px
   showBackground: boolean
   showOutlines: boolean
+  showStub: boolean // print a check stub below the check
   zoom: number | 'fit'
   registerPath: string // .xlsx register file ('' = keep the register in the app only)
 }
@@ -79,6 +80,7 @@ export const DEFAULT_SETTINGS: Settings = {
   fieldOffsets: {},
   showBackground: true,
   showOutlines: false,
+  showStub: true,
   zoom: 'fit',
   registerPath: ''
 }
