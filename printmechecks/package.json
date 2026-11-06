@@ -1,6 +1,6 @@
 {
   "name": "printmechecks",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
   "scripts": {
     "dev": "vite",
@@ -14,7 +14,8 @@
     "dist:win": "vite build && electron-builder --win --publish never"
   },
   "dependencies": {
-    "electron-updater": "^6.8.11"
+    "electron-updater": "^6.8.11",
+    "exceljs": "^4.4.0"
   },
   "devDependencies": {
     "@rushstack/eslint-patch": "^1.2.0",

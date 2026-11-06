@@ -1,5 +1,6 @@
 import { ref, reactive, computed, watch } from 'vue'
 import { defineStore } from 'pinia'
+import { desktop } from '../utilities'
 
 // ---------- Types ----------
 
@@ -37,26 +38,36 @@ export interface Settings {
   showBackground: boolean
   showOutlines: boolean
   zoom: number | 'fit'
+  registerPath: string // .xlsx register file ('' = keep the register in the app only)
 }
 
-// Register (history) entries keep the original flat format so older saved
-// checks still load.
+export type CheckStatus = 'Issued' | 'Cleared' | 'Void'
+export const STATUSES: CheckStatus[] = ['Issued', 'Cleared', 'Void']
+
+// Register entries. Entries kept in the app keep the original flat format
+// (so older saved checks still load) and include full account details.
+// Entries read from the .xlsx file only carry the account's last 4 digits.
 export interface RegisterEntry {
-  accountHolderName: string
-  accountHolderAddress: string
-  accountHolderCity: string
-  accountHolderState: string
-  accountHolderZip: string
+  id?: string
   checkNumber: string
   date: string
-  bankName: string
-  amount: string
   payTo: string
+  amount: string
   memo: string
-  routingNumber: string
-  bankAccountNumber: string
+  status?: CheckStatus | string
+  bankName?: string
   accountId?: string
+  accountLabel?: string
+  accountLast4?: string
   savedAt?: string
+  // In-app only:
+  accountHolderName?: string
+  accountHolderAddress?: string
+  accountHolderCity?: string
+  accountHolderState?: string
+  accountHolderZip?: string
+  routingNumber?: string
+  bankAccountNumber?: string
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -68,7 +79,8 @@ export const DEFAULT_SETTINGS: Settings = {
   fieldOffsets: {},
   showBackground: true,
   showOutlines: false,
-  zoom: 'fit'
+  zoom: 'fit',
+  registerPath: ''
 }
 
 // ---------- Storage helpers ----------
@@ -105,7 +117,7 @@ export function today () {
   return new Date().toLocaleDateString()
 }
 
-export function last4 (n: string) {
+export function last4 (n: string | undefined) {
   const d = String(n || '').replace(/\D/g, '')
   return d ? '••' + d.slice(-4) : ''
 }
@@ -168,6 +180,10 @@ export function blankAccount (): Account {
 }
 
 function accountFromEntry (e: Partial<RegisterEntry>): Account {
+  if (!e.routingNumber && !e.bankAccountNumber) {
+    // From the .xlsx file: no full account details there
+    return { ...blankAccount(), label: e.accountLabel || '', bankName: e.bankName || '' }
+  }
   return {
     ...blankAccount(),
     holderName: e.accountHolderName || '',
@@ -185,15 +201,21 @@ function accountFromEntry (e: Partial<RegisterEntry>): Account {
 // ---------- Store ----------
 
 export const useAppStore = defineStore('app', () => {
-  // Register (saved checks)
-  const register = ref<RegisterEntry[]>(load(KEYS.register, []))
-  watch(register, v => save(KEYS.register, v), { deep: true })
+  // Register kept in the app (always, also as a backup when a file is used)
+  const localRegister = ref<RegisterEntry[]>(load<RegisterEntry[]>(KEYS.register, []).map(e => ({
+    ...e,
+    id: e.id || newId(),
+    status: e.status || 'Issued'
+  })))
+  watch(localRegister, v => save(KEYS.register, v), { deep: true, immediate: true })
+  // Older code read from this name
+  const register = computed(() => (registerSource.value === 'file' ? fileRegister.value : localRegister.value))
 
   // Accounts. First run: build one from the most recent saved check, so
   // anyone upgrading keeps their details.
   let initialAccounts = load<Account[]>(KEYS.accounts, [])
   if (!initialAccounts.length) {
-    const recent = register.value[register.value.length - 1]
+    const recent = localRegister.value[localRegister.value.length - 1]
     initialAccounts = [recent
       ? accountFromEntry(recent)
       : {
@@ -222,6 +244,13 @@ export const useAppStore = defineStore('app', () => {
   // Settings
   const settings = reactive<Settings>({ ...DEFAULT_SETTINGS, ...load<Partial<Settings>>(KEYS.settings, {}) })
   watch(settings, v => save(KEYS.settings, v), { deep: true })
+
+  // Register .xlsx file (desktop app only)
+  const fileRegister = ref<RegisterEntry[]>([])
+  const fileError = ref('')
+  const fileBusy = ref(false)
+  const registerSource = computed<'file' | 'local'>(() =>
+    settings.registerPath && desktop()?.register ? 'file' : 'local')
 
   // Current check
   const check = reactive<CheckData>({
@@ -261,9 +290,9 @@ export const useAppStore = defineStore('app', () => {
     check.checkNumber = account.value.nextCheckNumber || '100'
   }
 
-  function saveToRegister () {
-    const a = account.value
-    register.value.push({
+  function entryForAccount (a: Account): RegisterEntry {
+    return {
+      id: newId(),
       accountHolderName: a.holderName,
       accountHolderAddress: a.address,
       accountHolderCity: a.city,
@@ -272,30 +301,164 @@ export const useAppStore = defineStore('app', () => {
       bankName: a.bankName,
       routingNumber: a.routingNumber,
       bankAccountNumber: a.accountNumber,
+      accountLabel: accountTitle(a),
+      accountLast4: last4(a.accountNumber),
       checkNumber: check.checkNumber,
       date: check.date,
       payTo: check.payTo,
       amount: check.amount,
       memo: check.memo,
+      status: 'Issued',
       accountId: a.id,
       savedAt: new Date().toISOString()
-    })
+    }
+  }
+
+  // What goes into the .xlsx file: no full account or routing numbers.
+  function fileEntry (e: RegisterEntry): RegisterEntry {
+    const a = accounts.value.find(x => x.id === e.accountId)
+    return {
+      id: e.id,
+      date: e.date,
+      checkNumber: e.checkNumber,
+      payTo: e.payTo,
+      amount: e.amount,
+      memo: e.memo,
+      status: e.status || 'Issued',
+      accountLabel: e.accountLabel || (a ? accountTitle(a) : e.bankName || ''),
+      bankName: e.bankName || '',
+      accountLast4: e.accountLast4 || last4(e.bankAccountNumber),
+      savedAt: e.savedAt,
+      accountId: e.accountId || ''
+    }
+  }
+
+  async function saveToRegister () {
+    const a = account.value
+    const entry = entryForAccount(a)
+    localRegister.value.push(entry)
     // Advance the account's next number, unless this was an older check
     // (e.g. reprinting one from earlier in the same series).
     const following = nextCheckNumber(check.checkNumber)
     if (!isAfter(a.nextCheckNumber, following)) a.nextCheckNumber = following
-    notify(`Check #${check.checkNumber} saved to the register. Next check number: ${a.nextCheckNumber}.`)
+    let where = 'the register'
+    if (registerSource.value === 'file') {
+      const ok = await fileCall(api => api.append(settings.registerPath, fileEntry(entry)))
+      if (!ok) {
+        notify(`Check #${entry.checkNumber} was saved in the app, but not to the register file: ${fileError.value}`)
+        return
+      }
+      where = 'the register file'
+    }
+    notify(`Check #${entry.checkNumber} saved to ${where}. Next check number: ${a.nextCheckNumber}.`)
+  }
+
+  // ----- Register file -----
+
+  type FileResult = { ok: boolean, data?: unknown, error?: string, missing?: boolean }
+  type RegisterApi = {
+    choose: (mode: 'new' | 'open') => Promise<FileResult>
+    read: (f: string) => Promise<FileResult>
+    create: (f: string, e: RegisterEntry[]) => Promise<FileResult>
+    append: (f: string, e: RegisterEntry) => Promise<FileResult>
+    update: (f: string, id: string, p: object) => Promise<FileResult>
+    remove: (f: string, id: string) => Promise<FileResult>
+    show: (f: string) => Promise<void>
+    open: (f: string) => Promise<string>
+  }
+  function api (): RegisterApi | undefined {
+    return (desktop() as unknown as { register?: RegisterApi } | undefined)?.register
+  }
+
+  // Runs a file operation; on success the result (all entries) becomes the
+  // register. Returns false and sets fileError on failure.
+  async function fileCall (fn: (a: RegisterApi) => Promise<FileResult>) {
+    const a = api()
+    if (!a) return false
+    fileBusy.value = true
+    try {
+      // Plain copies: reactive proxies can't be sent to the desktop side
+      const res = await fn(a)
+      if (!res.ok) {
+        fileError.value = res.error || 'Unknown error'
+        return false
+      }
+      fileError.value = ''
+      if (Array.isArray(res.data)) fileRegister.value = res.data as RegisterEntry[]
+      return true
+    } finally {
+      fileBusy.value = false
+    }
+  }
+
+  async function refreshRegisterFile () {
+    if (registerSource.value !== 'file' || fileBusy.value) return
+    await fileCall(a => a.read(settings.registerPath))
+  }
+
+  async function connectRegisterFile (mode: 'new' | 'open') {
+    const a = api()
+    if (!a) return
+    const picked = await a.choose(mode)
+    if (!picked.ok || !picked.data) return
+    const file = picked.data as string
+    if (mode === 'new') {
+      const existing = localRegister.value
+      const copy = existing.length > 0 &&
+        confirm(`Copy the ${existing.length} check${existing.length === 1 ? '' : 's'} already saved in the app into the new register file?`)
+      const entries = copy ? existing.map(e => fileEntry(JSON.parse(JSON.stringify(e)))) : []
+      const res = await a.create(file, entries)
+      if (!res.ok) {
+        notify('Could not create the register file: ' + res.error)
+        return
+      }
+      fileRegister.value = res.data as RegisterEntry[]
+    } else {
+      const res = await a.read(file)
+      if (!res.ok) {
+        notify('Could not use that file: ' + res.error)
+        return
+      }
+      fileRegister.value = res.data as RegisterEntry[]
+    }
+    fileError.value = ''
+    settings.registerPath = file
+    notify(`Register file: ${file}`)
+  }
+
+  function disconnectRegisterFile () {
+    settings.registerPath = ''
+    fileRegister.value = []
+    fileError.value = ''
+    notify('The register is kept in the app again. The .xlsx file was not changed.')
+  }
+
+  async function setStatus (entry: RegisterEntry, status: CheckStatus) {
+    if (registerSource.value === 'file') {
+      const ok = await fileCall(a => a.update(settings.registerPath, entry.id || '', { status }))
+      if (!ok) notify('Could not update the register file: ' + fileError.value)
+    }
+    // Keep the in-app copy in step
+    const local = localRegister.value.find(e => e.id === entry.id)
+    if (local) local.status = status
   }
 
   function openFromRegister (entry: RegisterEntry) {
     let a = accounts.value.find(x => x.id === entry.accountId) ||
-      accounts.value.find(x => x.routingNumber === entry.routingNumber && x.accountNumber === entry.bankAccountNumber)
-    if (!a) {
+      (entry.bankAccountNumber
+        ? accounts.value.find(x => x.routingNumber === entry.routingNumber && x.accountNumber === entry.bankAccountNumber)
+        : undefined) ||
+      (entry.accountLast4
+        ? accounts.value.find(x => last4(x.accountNumber) === entry.accountLast4 && (!entry.bankName || x.bankName === entry.bankName))
+        : undefined)
+    if (!a && entry.bankAccountNumber) {
       a = accountFromEntry(entry)
       accounts.value.push(a)
       notify('That check used an account that wasn\'t saved, so it was added to your accounts.')
+    } else if (!a) {
+      notify(`No saved account matches ${entry.accountLabel || 'that check'}; it's shown on the current account.`)
     }
-    activeAccountId.value = a.id
+    if (a) activeAccountId.value = a.id
     check.checkNumber = entry.checkNumber
     check.date = entry.date
     check.payTo = entry.payTo
@@ -303,8 +466,15 @@ export const useAppStore = defineStore('app', () => {
     check.memo = entry.memo
   }
 
-  function deleteFromRegister (index: number) {
-    register.value.splice(index, 1)
+  async function deleteFromRegister (entry: RegisterEntry) {
+    if (registerSource.value === 'file') {
+      const ok = await fileCall(a => a.remove(settings.registerPath, entry.id || ''))
+      if (!ok) {
+        notify('Could not delete from the register file: ' + fileError.value)
+        return
+      }
+    }
+    localRegister.value = localRegister.value.filter(e => e.id !== entry.id)
   }
 
   // ----- Account actions -----
@@ -379,9 +549,11 @@ export const useAppStore = defineStore('app', () => {
   }
 
   return {
-    register, accounts, activeAccountId, account, settings, check,
+    register, localRegister, fileRegister, fileError, fileBusy, registerSource,
+    accounts, activeAccountId, account, settings, check,
     tool, selectedField, editingAccount, toast,
     notify, newCheck, switchAccount, saveToRegister, openFromRegister, deleteFromRegister,
+    refreshRegisterFile, connectRegisterFile, disconnectRegisterFile, setStatus,
     startNewAccount, startEditAccount, saveAccount, duplicateAccount, deleteAccount,
     nudgeField, resetField, resetLayout, resetFont
   }

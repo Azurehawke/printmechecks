@@ -132,6 +132,21 @@
                     <div class="group-label">Register</div>
                 </div>
                 <div class="group">
+                    <div class="group-items" v-if="canUseFile">
+                        <button class="big" title="Create a new .xlsx register file" @click="store.connectRegisterFile('new')"><i class="bi bi-file-earmark-plus"></i>New<br>File…</button>
+                        <button class="big" title="Use an existing .xlsx register file" @click="store.connectRegisterFile('open')"><i class="bi bi-folder2-open"></i>Open<br>File…</button>
+                        <template v-if="store.registerSource === 'file'">
+                            <button class="big" title="Show the file in its folder" @click="fileApi?.show(store.settings.registerPath)"><i class="bi bi-folder-symlink"></i>Show in<br>Folder</button>
+                            <button class="big" title="Open the file in Excel or your default app" @click="openInApp"><i class="bi bi-box-arrow-up-right"></i>Open in<br>Excel</button>
+                            <button class="big" title="Stop using the file (it isn't deleted)" @click="store.disconnectRegisterFile()"><i class="bi bi-x-square"></i>Stop<br>Using</button>
+                        </template>
+                    </div>
+                    <div class="group-items" v-else>
+                        <span class="hint">Saving the register to an<br>.xlsx file needs the desktop app.</span>
+                    </div>
+                    <div class="group-label">Register File{{ store.registerSource === 'file' ? ': ' + fileName : '' }}</div>
+                </div>
+                <div class="group">
                     <div class="group-items">
                         <button class="big" @click="backToCheck"><i class="bi bi-arrow-left-square"></i>Back to<br>Check</button>
                     </div>
@@ -145,9 +160,9 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useAppStore, accountTitle } from '../stores/app'
+import { useAppStore, accountTitle, last4 } from '../stores/app'
 import { FIELDS } from '../checkLayout'
-import { printPreview, savePdf } from '../utilities'
+import { printPreview, savePdf, desktop } from '../utilities'
 import AccountPicker from './AccountPicker.vue'
 
 const store = useAppStore()
@@ -174,6 +189,16 @@ function backToCheck () {
 }
 
 const sel = computed(() => store.selectedField)
+
+// ----- Register file -----
+type FileApi = { show: (f: string) => Promise<void>, open: (f: string) => Promise<string> }
+const fileApi = (desktop() as unknown as { register?: FileApi } | undefined)?.register
+const canUseFile = !!fileApi
+const fileName = computed(() => store.settings.registerPath.split(/[\\/]/).pop())
+async function openInApp () {
+    const err = await fileApi?.open(store.settings.registerPath)
+    if (err) store.notify('Could not open the file: ' + err)
+}
 function nudge (dx: number, dy: number) {
     if (sel.value) store.nudgeField(sel.value, dx, dy)
 }
@@ -222,13 +247,12 @@ function removeAccount () {
 
 // ----- Register export -----
 function exportCsv () {
-    const cols = ['date', 'checkNumber', 'payTo', 'amount', 'memo', 'bankName', 'account', 'accountHolderName']
-    const head = ['Date', 'Check #', 'Payee', 'Amount', 'Memo', 'Bank', 'Account', 'Account holder']
+    const head = ['Date', 'Check #', 'Payee', 'Amount', 'Memo', 'Status', 'Account', 'Bank', 'Acct (last 4)']
     const esc = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`
-    const rows = store.register.map(e => cols.map(c => {
-        if (c === 'account') return esc(String(e.bankAccountNumber || '').slice(-4).padStart(8, '•'))
-        return esc((e as unknown as Record<string, unknown>)[c])
-    }).join(','))
+    const rows = store.register.map(e => [
+        e.date, e.checkNumber, e.payTo, e.amount, e.memo, e.status || 'Issued',
+        e.accountLabel || '', e.bankName || '', e.accountLast4 || last4(e.bankAccountNumber)
+    ].map(esc).join(','))
     const blob = new Blob([[head.map(esc).join(','), ...rows].join('\r\n')], { type: 'text/csv' })
     const a = document.createElement('a')
     a.href = URL.createObjectURL(blob)

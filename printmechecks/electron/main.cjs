@@ -148,6 +148,44 @@ ipcMain.handle('preview-save-pdf', async () => {
 
 ipcMain.handle('preview-close', () => closePreview())
 
+// ---------- Register .xlsx file ----------
+// Results come back as { ok, data } or { ok: false, error } so the page can
+// show a readable message.
+const register = require('./register.cjs')
+
+function wrap (fn) {
+  return async (event, ...args) => {
+    try {
+      return { ok: true, data: await fn(event, ...args) }
+    } catch (err) {
+      const missing = err && (err.code === 'ENOENT' || /File not found/.test(err.message))
+      return { ok: false, missing, error: missing ? 'The register file wasn\'t found. It may have been moved, renamed, or not synced yet.' : String(err && err.message || err) }
+    }
+  }
+}
+
+ipcMain.handle('register-read', wrap((e, file) => register.read(file)))
+ipcMain.handle('register-create', wrap((e, file, entries) => register.create(file, entries)))
+ipcMain.handle('register-append', wrap((e, file, entry) => register.append(file, entry)))
+ipcMain.handle('register-update', wrap((e, file, id, patch) => register.update(file, id, patch)))
+ipcMain.handle('register-remove', wrap((e, file, id) => register.remove(file, id)))
+ipcMain.handle('register-choose', wrap(async (event, mode) => {
+  const win = BrowserWindow.fromWebContents(event.sender)
+  const filters = [{ name: 'Excel workbook', extensions: ['xlsx'] }]
+  if (mode === 'new') {
+    const r = await dialog.showSaveDialog(win, {
+      title: 'Create check register',
+      defaultPath: path.join(app.getPath('documents'), 'Check Register.xlsx'),
+      filters
+    })
+    return r.canceled ? null : r.filePath
+  }
+  const r = await dialog.showOpenDialog(win, { title: 'Open check register', properties: ['openFile'], filters })
+  return r.canceled ? null : r.filePaths[0]
+}))
+ipcMain.handle('register-show', (e, file) => { if (typeof file === 'string') shell.showItemInFolder(file) })
+ipcMain.handle('register-open', async (e, file) => (typeof file === 'string' && /\.xlsx$/i.test(file) ? shell.openPath(file) : 'not an .xlsx file'))
+
 // Minimal menu: keeps standard shortcuts (copy/paste, reload)
 // without a cluttered menu bar. Ctrl+P is handled by the page itself.
 const menu = Menu.buildFromTemplate([

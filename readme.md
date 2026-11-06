@@ -68,6 +68,37 @@ npm install
   match your printer's feed.
 * The signature line is left blank for signing by hand.
 
+### Register in an .xlsx file (desktop app)
+
+**Register → New File…** creates an Excel register (for example in your
+Obsidian vault) and can copy in the checks already saved in the app.
+**Open File…** connects an existing one. From then on, every **Save to
+Register** adds a row to the file, and the app re-reads it on startup and
+whenever you switch back to the app, so changes made in Excel, Obsidian or on
+another computer (via sync) show up. The app also keeps its own copy as a
+backup. **Stop Using** goes back to the in-app register without touching the
+file.
+
+The file has one sheet, `Register`, with a header row:
+
+| Column | Contents |
+|---|---|
+| Date | Check date (Excel date) |
+| Check # | As printed, e.g. `100-0001` |
+| Payee | |
+| Amount | Number, `$` format |
+| Memo | |
+| Status | `Issued`, `Cleared` or `Void` (dropdown in Excel) |
+| Account | Account nickname |
+| Bank | Bank name |
+| Acct (last 4) | e.g. `••1234`; full account and routing numbers are never written |
+| Saved | When the check was saved |
+| Entry ID, Account ID | Hidden; used by the app to find rows |
+
+Columns are matched by header name, so you can reorder them, add your own
+columns (e.g. Category) or formatting, and the app keeps them. If the file is
+open in Excel when the app needs to write, you'll be asked to close it.
+
 ## Windows desktop app
 
 Print Me Checks can run as a regular Windows 11 app. It runs fully offline:

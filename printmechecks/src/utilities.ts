@@ -34,6 +34,7 @@ interface DesktopApi {
   isDesktop: boolean
   printPreview: (name: string) => Promise<void>
   savePdf: (name: string) => Promise<void>
+  register?: unknown // .xlsx register file operations (see stores/app.ts)
 }
 
 export function desktop (): DesktopApi | undefined {
