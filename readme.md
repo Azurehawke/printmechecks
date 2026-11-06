@@ -95,25 +95,12 @@ is skipped silently. **Help → Releases on GitHub** opens the releases page.
 
 ### Publishing a new version
 
-1. Bump `"version"` in `printmechecks/package.json` (e.g. `1.0.1`) and commit.
-2. Tag the commit with the same version and push the tag:
+1. Bump `"version"` in `printmechecks/package.json` (e.g. `1.0.2`).
+2. Commit and push to `master`.
 
-   ```sh
-   git tag v1.0.1
-   git push origin v1.0.1
-   ```
-
-The GitHub Actions workflow (`.github/workflows/build-windows.yml`) builds both
-exes on Windows and publishes them as a GitHub Release with `latest.yml`, which
-is what the installed app checks. The workflow fails if the tag doesn't match
-the version in `package.json`. You can also run the workflow manually from the
-Actions tab to build without publishing.
-
-### Compile and Hot-Reload for Development
-
-```sh
-npm run dev
-```
-
-Then go to http://localhost:5173/ in your browser to start printing
-
+The GitHub Actions workflow (`.github/workflows/build-windows.yml`) sees a
+version with no release yet, builds both exes on Windows, and publishes
+release `v<version>` (it creates the tag) with `latest.yml`, which is what the
+installed app checks. Pushes that don't bump the version only build. You can
+also run the workflow manually from the Actions tab to build without
+publishing.
