@@ -580,6 +580,63 @@ export const useAppStore = defineStore('app', () => {
 
   // ----- Import / export (shared format with the Obsidian plugin) -----
 
+  // ---------- Layout files (same format as the Obsidian plugin's) ----------
+
+  const LAYOUT_KEYS = [
+    'fontFamily', 'fontSize', 'boldValues', 'offsetX', 'offsetY', 'fieldOffsets',
+    'showBackground', 'showOutlines', 'showStub', 'showGrid', 'snap', 'gridMm'
+  ] as const
+
+  function exportLayout () {
+    const layout: Record<string, unknown> = {}
+    for (const k of LAYOUT_KEYS) layout[k] = JSON.parse(JSON.stringify(settings[k]))
+    return { app: 'printmechecks', type: 'layout', version: 1, exportedAt: new Date().toISOString(), layout }
+  }
+
+  // Keeps only known settings with sensible values, so a hand-edited or
+  // foreign file can't put the layout into a state it can't draw.
+  function cleanLayout (src: Record<string, unknown>): Partial<Settings> {
+    const num = (v: unknown, lo: number, hi: number) =>
+      typeof v === 'number' && Number.isFinite(v) && v >= lo && v <= hi ? v : undefined
+    const bool = (v: unknown) => (typeof v === 'boolean' ? v : undefined)
+    const out: Partial<Settings> = {}
+    if (typeof src.fontFamily === 'string') out.fontFamily = src.fontFamily.slice(0, 200)
+    const fontSize = num(src.fontSize, 8, 48)
+    if (fontSize !== undefined) out.fontSize = fontSize
+    const offsetX = num(src.offsetX, -10, 10)
+    if (offsetX !== undefined) out.offsetX = offsetX
+    const offsetY = num(src.offsetY, -10, 10)
+    if (offsetY !== undefined) out.offsetY = offsetY
+    for (const k of ['boldValues', 'showBackground', 'showOutlines', 'showStub', 'showGrid', 'snap'] as const) {
+      const v = bool(src[k])
+      if (v !== undefined) out[k] = v
+    }
+    if ([0.5, 1, 2.5, 5].includes(src.gridMm as number)) out.gridMm = src.gridMm as number
+    if (src.fieldOffsets && typeof src.fieldOffsets === 'object') {
+      const fo: Record<string, FieldOffset> = {}
+      for (const [k, v] of Object.entries(src.fieldOffsets as Record<string, unknown>)) {
+        const o = v as { x?: unknown, y?: unknown }
+        if (k in FIELDS && typeof o?.x === 'number' && Number.isFinite(o.x) && typeof o?.y === 'number' && Number.isFinite(o.y)) {
+          fo[k] = { x: o.x, y: o.y }
+        }
+      }
+      out.fieldOffsets = fo
+    }
+    return out
+  }
+
+  function importLayout (text: string) {
+    let data: { app?: string, layout?: unknown }
+    try { data = JSON.parse(text) } catch { throw new Error('That file isn\'t valid JSON.') }
+    const src = data?.layout as Record<string, unknown> | undefined
+    if (!data || data.app !== 'printmechecks' || !src || typeof src !== 'object') {
+      throw new Error('That isn\'t a Print Me Checks layout file.')
+    }
+    const clean = cleanLayout(src)
+    Object.assign(settings, clean)
+    notify(`Imported layout: ${Object.keys(clean).length} settings updated.`)
+  }
+
   function exportAccounts () {
     const layout = {
       fontFamily: settings.fontFamily, fontSize: settings.fontSize, boldValues: settings.boldValues,
@@ -783,6 +840,7 @@ export const useAppStore = defineStore('app', () => {
     startNewAccount, startEditAccount, saveAccount, duplicateAccount, deleteAccount,
     nudgeField, resetField, resetLayout, resetFont,
     fieldPositionMm, setFieldPosition, stockProfiles, saveStockProfile, applyStockProfile, deleteStockProfile,
-    selectedFields, toggleFieldSelection, selectAllFields, alignSelected, distributeSelected
+    selectedFields, toggleFieldSelection, selectAllFields, alignSelected, distributeSelected,
+    exportLayout, importLayout
   }
 })

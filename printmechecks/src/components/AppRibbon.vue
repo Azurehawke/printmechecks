@@ -103,6 +103,13 @@
                 </div>
                 <div class="group">
                     <div class="group-items">
+                        <button class="big" title="Save this check layout to a file (opens in the Obsidian plugin too)" @click="exportLayout"><i class="bi bi-box-arrow-up"></i>Export<br>Layout</button>
+                        <button class="big" title="Load a check layout from a file" @click="importLayout"><i class="bi bi-box-arrow-in-down"></i>Import<br>Layout</button>
+                    </div>
+                    <div class="group-label">Layout file</div>
+                </div>
+                <div class="group">
+                    <div class="group-items">
                         <button class="big" @click="confirmReset"><i class="bi bi-arrow-counterclockwise"></i>Reset<br>Layout</button>
                     </div>
                     <div class="group-label">Reset</div>
@@ -278,6 +285,31 @@ function importAccounts () {
         if (!f) return
         try {
             store.importAccounts(await f.text())
+        } catch (e) {
+            store.notify('Import failed: ' + (e as Error).message)
+        }
+    }
+    input.click()
+}
+
+// ----- Layout transfer (no account numbers, so no confirmation needed) -----
+function exportLayout () {
+    const blob = new Blob([JSON.stringify(store.exportLayout(), null, 2)], { type: 'application/json' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = 'Print Me Checks layout.json'
+    a.click()
+    URL.revokeObjectURL(a.href)
+}
+function importLayout () {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = '.json,application/json'
+    input.onchange = async () => {
+        const f = input.files?.[0]
+        if (!f) return
+        try {
+            store.importLayout(await f.text())
         } catch (e) {
             store.notify('Import failed: ' + (e as Error).message)
         }
