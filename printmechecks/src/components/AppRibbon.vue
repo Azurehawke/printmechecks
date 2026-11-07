@@ -91,6 +91,7 @@
                     <div class="group-items">
                         <button class="big" :class="{ on: settings.showBackground }" @click="settings.showBackground = !settings.showBackground"><i class="bi bi-image"></i>Background</button>
                         <button class="big" :class="{ on: settings.showOutlines }" @click="settings.showOutlines = !settings.showOutlines"><i class="bi bi-bounding-box"></i>Outlines</button>
+                        <button class="big" :class="{ on: settings.showGrid }" @click="settings.showGrid = !settings.showGrid"><i class="bi bi-grid-3x3"></i>Grid (mm)</button>
                     </div>
                     <div class="group-label">Show (screen only)</div>
                 </div>

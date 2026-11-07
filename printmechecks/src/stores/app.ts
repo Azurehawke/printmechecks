@@ -1,6 +1,7 @@
 import { ref, reactive, computed, watch } from 'vue'
 import { defineStore } from 'pinia'
 import { desktop } from '../utilities'
+import { FIELDS, PX_PER_MM } from '../checkLayout'
 
 // ---------- Types ----------
 
@@ -28,6 +29,14 @@ export interface CheckData {
 
 export interface FieldOffset { x: number, y: number }
 
+// A saved layout for one kind of check stock.
+export interface StockProfile {
+  name: string
+  offsetX: number
+  offsetY: number
+  fieldOffsets: Record<string, FieldOffset>
+}
+
 export interface Settings {
   fontFamily: string // '' = app default
   fontSize: number // base size in px; every field scales from it
@@ -38,6 +47,7 @@ export interface Settings {
   showBackground: boolean
   showOutlines: boolean
   showStub: boolean // print a check stub below the check
+  showGrid: boolean // millimetre grid over the check (screen only)
   zoom: number | 'fit'
   registerPath: string // .xlsx register file ('' = keep the register in the app only)
 }
@@ -81,6 +91,7 @@ export const DEFAULT_SETTINGS: Settings = {
   showBackground: true,
   showOutlines: false,
   showStub: true,
+  showGrid: false,
   zoom: 'fit',
   registerPath: ''
 }
@@ -91,6 +102,7 @@ const KEYS = {
   accounts: 'pmc.accounts',
   activeAccount: 'pmc.activeAccountId',
   settings: 'pmc.settings',
+  stockProfiles: 'pmc.stockProfiles',
   register: 'checkList' // original key, kept for existing history
 }
 
@@ -592,6 +604,54 @@ export const useAppStore = defineStore('app', () => {
 
   // ----- Layout actions -----
 
+  // ---------- Layout editor (positions in mm from the check's top-left) ----------
+
+  const stockProfiles = ref<StockProfile[]>(load<StockProfile[]>(KEYS.stockProfiles, []))
+  watch(stockProfiles, v => save(KEYS.stockProfiles, v), { deep: true })
+
+  const round1 = (v: number) => Math.round(v * 10) / 10
+
+  function fieldPositionMm (key: string) {
+    const base = FIELDS[key]
+    const off = settings.fieldOffsets[key] || { x: 0, y: 0 }
+    return { top: round1((base.top + off.y) / PX_PER_MM), left: round1((base.left + off.x) / PX_PER_MM) }
+  }
+
+  function setFieldPosition (key: string, topMm: number, leftMm: number) {
+    const base = FIELDS[key]
+    if (!base || !Number.isFinite(topMm) || !Number.isFinite(leftMm)) return
+    settings.fieldOffsets = {
+      ...settings.fieldOffsets,
+      [key]: { x: Math.round(leftMm * PX_PER_MM - base.left), y: Math.round(topMm * PX_PER_MM - base.top) }
+    }
+  }
+
+  function saveStockProfile (name: string) {
+    const n = name.trim()
+    if (!n) return notify('Name the stock first, e.g. "Schools First 9 mm".')
+    const profile: StockProfile = {
+      name: n,
+      offsetX: settings.offsetX,
+      offsetY: settings.offsetY,
+      fieldOffsets: JSON.parse(JSON.stringify(settings.fieldOffsets))
+    }
+    stockProfiles.value = [...stockProfiles.value.filter(p => p.name !== n), profile]
+    notify(`Saved stock profile "${n}".`)
+  }
+
+  function applyStockProfile (name: string) {
+    const p = stockProfiles.value.find(x => x.name === name)
+    if (!p) return
+    settings.offsetX = p.offsetX
+    settings.offsetY = p.offsetY
+    settings.fieldOffsets = JSON.parse(JSON.stringify(p.fieldOffsets))
+    notify(`Applied stock profile "${name}".`)
+  }
+
+  function deleteStockProfile (name: string) {
+    stockProfiles.value = stockProfiles.value.filter(p => p.name !== name)
+  }
+
   function nudgeField (key: string, dx: number, dy: number) {
     const cur = settings.fieldOffsets[key] || { x: 0, y: 0 }
     settings.fieldOffsets = { ...settings.fieldOffsets, [key]: { x: cur.x + dx, y: cur.y + dy } }
@@ -625,6 +685,7 @@ export const useAppStore = defineStore('app', () => {
     refreshRegisterFile, connectRegisterFile, disconnectRegisterFile, setStatus,
     exportAccounts, importAccounts,
     startNewAccount, startEditAccount, saveAccount, duplicateAccount, deleteAccount,
-    nudgeField, resetField, resetLayout, resetFont
+    nudgeField, resetField, resetLayout, resetFont,
+    fieldPositionMm, setFieldPosition, stockProfiles, saveStockProfile, applyStockProfile, deleteStockProfile
   }
 })

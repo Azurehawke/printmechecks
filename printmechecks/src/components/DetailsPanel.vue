@@ -46,14 +46,42 @@
         <section v-if="store.selectedField" class="selected">
             <h6>Selected field</h6>
             <div><strong>{{ FIELDS[store.selectedField].label }}</strong></div>
-            <div class="muted">Arrow keys move it 1px, Shift+arrow 10px. Esc deselects.</div>
+            <div class="muted">Drag it, or arrow keys (1px; Shift 10px). Esc deselects.</div>
+            <div class="row g-2 mt-1">
+                <div class="col-6">
+                    <label class="form-label">Top (mm)</label>
+                    <input class="form-control form-control-sm" type="number" step="0.5" :value="store.fieldPositionMm(store.selectedField).top" @change="setPosition('top', $event)">
+                </div>
+                <div class="col-6">
+                    <label class="form-label">Left (mm)</label>
+                    <input class="form-control form-control-sm" type="number" step="0.5" :value="store.fieldPositionMm(store.selectedField).left" @change="setPosition('left', $event)">
+                </div>
+            </div>
+            <div class="muted small">From the check's top-left corner.</div>
             <button class="btn btn-link btn-sm p-0" @click="store.resetField(store.selectedField)">Reset this field</button>
+        </section>
+
+        <section class="profiles">
+            <h6>Stock profile</h6>
+            <div class="input-group input-group-sm mb-1">
+                <input class="form-control" v-model="profileName" placeholder="e.g. Schools First 9 mm">
+                <button class="btn btn-outline-primary" :disabled="!profileName.trim()" @click="store.saveStockProfile(profileName); profileName = ''">Save</button>
+            </div>
+            <div class="input-group input-group-sm">
+                <select class="form-select" v-model="chosenProfile">
+                    <option value="">Choose…</option>
+                    <option v-for="p in store.stockProfiles" :key="p.name" :value="p.name">{{ p.name }}</option>
+                </select>
+                <button class="btn btn-outline-secondary" :disabled="!chosenProfile" @click="store.applyStockProfile(chosenProfile)">Apply</button>
+                <button class="btn btn-outline-danger" :disabled="!chosenProfile" @click="store.deleteStockProfile(chosenProfile); chosenProfile = ''">Delete</button>
+            </div>
+            <div class="muted small">Saves the whole-check shift and every field position.</div>
         </section>
     </aside>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useAppStore, today, last4 } from '../stores/app'
 import { amountInWords, formatMoney } from '../utilities'
 import { FIELDS } from '../checkLayout'
@@ -64,6 +92,19 @@ const check = store.check
 const account = computed(() => store.account)
 const words = computed(() => amountInWords(check.amount))
 const emit = defineEmits<{ (e: 'print'): void }>()
+
+const profileName = ref('')
+const chosenProfile = ref('')
+
+// Typed positions are in mm from the check's top-left corner
+function setPosition (which: 'top' | 'left', e: Event) {
+    const key = store.selectedField
+    if (!key) return
+    const v = parseFloat((e.target as HTMLInputElement).value)
+    const cur = store.fieldPositionMm(key)
+    if (which === 'top') store.setFieldPosition(key, v, cur.left)
+    else store.setFieldPosition(key, cur.top, v)
+}
 
 function tidyAmount () {
     check.amount = formatMoney(check.amount).replace(/,/g, '')

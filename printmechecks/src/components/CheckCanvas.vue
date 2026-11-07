@@ -41,6 +41,12 @@
                 <div>Memo: {{ check.memo }}</div>
             </div>
         </div>
+
+        <!-- Millimetre grid: screen only, never printed, passes clicks through -->
+        <div v-if="settings.showGrid" class="mm-grid no-print" aria-hidden="true">
+            <span v-for="m in xMarks" :key="'x' + m.mm" class="mm-label" :style="{ left: m.px + 'px', top: '0px' }">{{ m.mm }}</span>
+            <span v-for="m in yMarks" :key="'y' + m.mm" class="mm-label" :style="{ top: m.px + 'px', left: '0px' }">{{ m.mm }}</span>
+        </div>
     </div>
 </template>
 
@@ -48,12 +54,45 @@
 import { computed } from 'vue'
 import { useAppStore, micrCheckNumber } from '../stores/app'
 import { formatMoney, amountInWords } from '../utilities'
-import { FIELDS, PX_PER_INCH } from '../checkLayout'
+import { FIELDS, PX_PER_INCH, PX_PER_MM, CHECK_WIDTH } from '../checkLayout'
 
 const store = useAppStore()
 const settings = store.settings
 const check = store.check
 const account = computed(() => store.account)
+
+// Millimetre grid labels, measured from the check's top-left corner
+const xMarks = Array.from({ length: 22 }, (_, i) => ({ mm: i * 10, px: i * 10 * PX_PER_MM })).filter(m => m.px < CHECK_WIDTH)
+const yMarks = Array.from({ length: 9 }, (_, i) => ({ mm: i * 10, px: i * 10 * PX_PER_MM })).filter(m => m.px < 480)
+
+// Drag a field with the mouse (select tool). Converts screen pixels to canvas
+// pixels using the on-screen scale, so it works at any zoom.
+function startFieldDrag (key: string, e: MouseEvent) {
+    if (store.tool !== 'select' || e.button !== 0) return
+    e.preventDefault()
+    e.stopPropagation()
+    store.selectedField = key
+    const box = (e.currentTarget as HTMLElement).closest('.check-box') as HTMLElement | null
+    const scale = box ? box.getBoundingClientRect().width / CHECK_WIDTH : 1
+    const startX = e.clientX
+    const startY = e.clientY
+    const orig = { ...(settings.fieldOffsets[key] || { x: 0, y: 0 }) }
+    const move = (ev: MouseEvent) => {
+        settings.fieldOffsets = {
+            ...settings.fieldOffsets,
+            [key]: {
+                x: Math.round(orig.x + (ev.clientX - startX) / scale),
+                y: Math.round(orig.y + (ev.clientY - startY) / scale)
+            }
+        }
+    }
+    const up = () => {
+        window.removeEventListener('mousemove', move)
+        window.removeEventListener('mouseup', up)
+    }
+    window.addEventListener('mousemove', move)
+    window.addEventListener('mouseup', up)
+}
 
 const cityLine = computed(() => {
     const a = account.value
@@ -80,6 +119,7 @@ function fld (key: string) {
         title: store.tool === 'select' ? base.label : undefined,
         class: ['fld', { selected: store.selectedField === key }],
         style: { position: 'absolute' as const, top: base.top + off.y + 'px', left: base.left + off.x + 'px' },
+        onMousedown: (e: MouseEvent) => startFieldDrag(key, e),
         onClick: (e: MouseEvent) => {
             if (store.tool !== 'select') return
             e.stopPropagation()
@@ -112,6 +152,23 @@ function fld (key: string) {
 }
 .check-text .val {
     font-weight: var(--val-weight, bold);
+}
+/* Millimetre grid: lines every 5 mm (1 mm = PX_PER_MM canvas px), labels every 10 mm */
+.mm-grid {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background-image:
+        linear-gradient(to right, rgba(220, 53, 69, .22) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(220, 53, 69, .22) 1px, transparent 1px);
+    background-size: 28.161px 28.161px;
+}
+.mm-label {
+    position: absolute;
+    font-size: 10px;
+    line-height: 1;
+    color: #dc3545;
+    padding: 1px 2px;
 }
 /* Stub lines under the check, starting just below the first perforation */
 .check-stub {
