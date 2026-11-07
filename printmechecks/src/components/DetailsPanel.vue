@@ -43,22 +43,59 @@
             <button class="btn btn-outline-secondary btn-sm" @click="store.newCheck()"><i class="bi bi-file-earmark-plus"></i> New Check</button>
         </section>
 
-        <section v-if="store.selectedField" class="selected">
+        <section v-if="store.selectedFields.length === 1" class="selected">
             <h6>Selected field</h6>
-            <div><strong>{{ FIELDS[store.selectedField].label }}</strong></div>
+            <div><strong>{{ FIELDS[store.selectedFields[0]].label }}</strong></div>
             <div class="muted">Drag it, or arrow keys (1px; Shift 10px). Esc deselects.</div>
             <div class="row g-2 mt-1">
                 <div class="col-6">
                     <label class="form-label">Top (mm)</label>
-                    <input class="form-control form-control-sm" type="number" step="0.5" :value="store.fieldPositionMm(store.selectedField).top" @change="setPosition('top', $event)">
+                    <input class="form-control form-control-sm" type="number" step="0.5" :value="store.fieldPositionMm(store.selectedFields[0]).top" @change="setPosition('top', $event)">
                 </div>
                 <div class="col-6">
                     <label class="form-label">Left (mm)</label>
-                    <input class="form-control form-control-sm" type="number" step="0.5" :value="store.fieldPositionMm(store.selectedField).left" @change="setPosition('left', $event)">
+                    <input class="form-control form-control-sm" type="number" step="0.5" :value="store.fieldPositionMm(store.selectedFields[0]).left" @change="setPosition('left', $event)">
                 </div>
             </div>
             <div class="muted small">From the check's top-left corner.</div>
-            <button class="btn btn-link btn-sm p-0" @click="store.resetField(store.selectedField)">Reset this field</button>
+            <button class="btn btn-link btn-sm p-0" @click="store.resetField(store.selectedFields[0])">Reset this field</button>
+        </section>
+
+        <section v-else-if="store.selectedFields.length > 1" class="selected">
+            <h6>{{ store.selectedFields.length }} fields selected</h6>
+            <div class="muted small">Shift-click or drag a box to add or remove fields.</div>
+            <div class="align-label muted small mt-1">Align to</div>
+            <div class="btn-group btn-group-sm d-flex mb-1">
+                <button class="btn btn-outline-secondary" title="Align left edges" @click="store.alignSelected('left')">Left</button>
+                <button class="btn btn-outline-secondary" title="Align centres horizontally" @click="store.alignSelected('hcenter')">Centre</button>
+                <button class="btn btn-outline-secondary" title="Align right edges" @click="store.alignSelected('right')">Right</button>
+            </div>
+            <div class="btn-group btn-group-sm d-flex mb-1">
+                <button class="btn btn-outline-secondary" title="Align top edges" @click="store.alignSelected('top')">Top</button>
+                <button class="btn btn-outline-secondary" title="Align middles vertically" @click="store.alignSelected('vcenter')">Middle</button>
+                <button class="btn btn-outline-secondary" title="Align bottom edges" @click="store.alignSelected('bottom')">Bottom</button>
+            </div>
+            <div class="align-label muted small mt-1">Space evenly (3 or more)</div>
+            <div class="btn-group btn-group-sm d-flex mb-1">
+                <button class="btn btn-outline-secondary" :disabled="store.selectedFields.length < 3" @click="store.distributeSelected('h')">Horizontally</button>
+                <button class="btn btn-outline-secondary" :disabled="store.selectedFields.length < 3" @click="store.distributeSelected('v')">Vertically</button>
+            </div>
+            <button class="btn btn-link btn-sm p-0" @click="store.selectedFields.forEach(k => store.resetField(k))">Reset these fields</button>
+        </section>
+
+        <section class="grid-snap">
+            <h6>Grid &amp; snap</h6>
+            <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" id="pmc-snap" v-model="store.settings.snap">
+                <label class="form-check-label" for="pmc-snap">Snap to grid</label>
+            </div>
+            <label class="form-label mt-1" for="pmc-grid-mm">Grid spacing</label>
+            <select id="pmc-grid-mm" class="form-select form-select-sm" v-model.number="store.settings.gridMm">
+                <option :value="0.5">0.5 mm</option>
+                <option :value="1">1 mm</option>
+                <option :value="2.5">2.5 mm</option>
+                <option :value="5">5 mm</option>
+            </select>
         </section>
 
         <section class="profiles">
@@ -98,7 +135,7 @@ const chosenProfile = ref('')
 
 // Typed positions are in mm from the check's top-left corner
 function setPosition (which: 'top' | 'left', e: Event) {
-    const key = store.selectedField
+    const key = store.selectedFields[0]
     if (!key) return
     const v = parseFloat((e.target as HTMLInputElement).value)
     const cur = store.fieldPositionMm(key)

@@ -1,7 +1,7 @@
 import { ref, reactive, computed, watch } from 'vue'
 import { defineStore } from 'pinia'
 import { desktop } from '../utilities'
-import { FIELDS, PX_PER_MM } from '../checkLayout'
+import { FIELDS, PX_PER_MM, CHECK_WIDTH } from '../checkLayout'
 
 // ---------- Types ----------
 
@@ -48,6 +48,8 @@ export interface Settings {
   showOutlines: boolean
   showStub: boolean // print a check stub below the check
   showGrid: boolean // millimetre grid over the check (screen only)
+  snap: boolean // snap dragged fields to the grid
+  gridMm: number // grid spacing, also the snap step
   zoom: number | 'fit'
   registerPath: string // .xlsx register file ('' = keep the register in the app only)
 }
@@ -92,6 +94,8 @@ export const DEFAULT_SETTINGS: Settings = {
   showOutlines: false,
   showStub: true,
   showGrid: false,
+  snap: true,
+  gridMm: 1,
   zoom: 'fit',
   registerPath: ''
 }
@@ -277,7 +281,13 @@ export const useAppStore = defineStore('app', () => {
 
   // UI state (not saved)
   const tool = ref<'select' | 'pan'>('select')
-  const selectedField = ref<string | null>(null)
+  // Every selected field, in the order selected. selectedField is the first
+  // one, kept so single-field code keeps working.
+  const selectedFields = ref<string[]>([])
+  const selectedField = computed<string | null>({
+    get: () => selectedFields.value[0] ?? null,
+    set: v => { selectedFields.value = v ? [v] : [] }
+  })
   const editingAccount = ref<Account | null>(null) // open in the account dialog
   const toast = ref('')
   let toastTimer: ReturnType<typeof setTimeout> | undefined
@@ -652,6 +662,92 @@ export const useAppStore = defineStore('app', () => {
     stockProfiles.value = stockProfiles.value.filter(p => p.name !== name)
   }
 
+  // ---------- Selection, align and distribute ----------
+
+  function toggleFieldSelection (key: string) {
+    selectedFields.value = selectedFields.value.includes(key)
+      ? selectedFields.value.filter(k => k !== key)
+      : [...selectedFields.value, key]
+  }
+
+  function selectAllFields () {
+    selectedFields.value = Object.keys(FIELDS)
+  }
+
+  // A field's box on the check, in canvas px, measured from the page so the
+  // real printed width and height are used.
+  function measureField (key: string) {
+    const el = document.querySelector<HTMLElement>(`.check-box [data-field="${key}"]`)
+    const box = document.querySelector<HTMLElement>('.check-box')
+    if (!el || !box) return null
+    const scale = box.getBoundingClientRect().width / CHECK_WIDTH
+    const r = el.getBoundingClientRect()
+    const base = FIELDS[key]
+    const off = settings.fieldOffsets[key] || { x: 0, y: 0 }
+    return { key, l: base.left + off.x, t: base.top + off.y, w: r.width / scale, h: r.height / scale }
+  }
+
+  function measureSelection () {
+    return selectedFields.value
+      .map(k => measureField(k))
+      .filter((m): m is NonNullable<ReturnType<typeof measureField>> => !!m)
+  }
+
+  // Positions are absolute canvas px for the left/top edge of each field.
+  function setFieldEdges (moves: Record<string, { x?: number, y?: number }>) {
+    const next = { ...settings.fieldOffsets }
+    for (const [key, p] of Object.entries(moves)) {
+      const base = FIELDS[key]
+      const cur = next[key] || { x: 0, y: 0 }
+      next[key] = {
+        x: p.x !== undefined ? Math.round(p.x - base.left) : cur.x,
+        y: p.y !== undefined ? Math.round(p.y - base.top) : cur.y
+      }
+    }
+    settings.fieldOffsets = next
+  }
+
+  // Line up the selected fields with each other, to the outermost edge or to
+  // the middle of the selection.
+  function alignSelected (mode: 'left' | 'hcenter' | 'right' | 'top' | 'vcenter' | 'bottom') {
+    const items = measureSelection()
+    if (items.length < 2) return
+    const minL = Math.min(...items.map(i => i.l))
+    const maxR = Math.max(...items.map(i => i.l + i.w))
+    const minT = Math.min(...items.map(i => i.t))
+    const maxB = Math.max(...items.map(i => i.t + i.h))
+    const moves: Record<string, { x?: number, y?: number }> = {}
+    for (const i of items) {
+      if (mode === 'left') moves[i.key] = { x: minL }
+      else if (mode === 'right') moves[i.key] = { x: maxR - i.w }
+      else if (mode === 'hcenter') moves[i.key] = { x: (minL + maxR) / 2 - i.w / 2 }
+      else if (mode === 'top') moves[i.key] = { y: minT }
+      else if (mode === 'bottom') moves[i.key] = { y: maxB - i.h }
+      else moves[i.key] = { y: (minT + maxB) / 2 - i.h / 2 }
+    }
+    setFieldEdges(moves)
+  }
+
+  // Space the selected fields evenly, keeping the outermost two where they are.
+  function distributeSelected (axis: 'h' | 'v') {
+    const horiz = axis === 'h'
+    const pos = (i: { l: number, t: number }) => (horiz ? i.l : i.t)
+    const size = (i: { w: number, h: number }) => (horiz ? i.w : i.h)
+    const items = measureSelection().sort((a, b) => pos(a) - pos(b))
+    if (items.length < 3) return
+    const start = pos(items[0])
+    const end = Math.max(...items.map(i => pos(i) + size(i)))
+    const total = items.reduce((sum, i) => sum + size(i), 0)
+    const gap = (end - start - total) / (items.length - 1)
+    const moves: Record<string, { x?: number, y?: number }> = {}
+    let cursor = start
+    for (const i of items) {
+      moves[i.key] = horiz ? { x: cursor } : { y: cursor }
+      cursor += size(i) + gap
+    }
+    setFieldEdges(moves)
+  }
+
   function nudgeField (key: string, dx: number, dy: number) {
     const cur = settings.fieldOffsets[key] || { x: 0, y: 0 }
     settings.fieldOffsets = { ...settings.fieldOffsets, [key]: { x: cur.x + dx, y: cur.y + dy } }
@@ -686,6 +782,7 @@ export const useAppStore = defineStore('app', () => {
     exportAccounts, importAccounts,
     startNewAccount, startEditAccount, saveAccount, duplicateAccount, deleteAccount,
     nudgeField, resetField, resetLayout, resetFont,
-    fieldPositionMm, setFieldPosition, stockProfiles, saveStockProfile, applyStockProfile, deleteStockProfile
+    fieldPositionMm, setFieldPosition, stockProfiles, saveStockProfile, applyStockProfile, deleteStockProfile,
+    selectedFields, toggleFieldSelection, selectAllFields, alignSelected, distributeSelected
   }
 })

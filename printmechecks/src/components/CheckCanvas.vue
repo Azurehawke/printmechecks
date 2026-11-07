@@ -1,6 +1,6 @@
 <template>
-    <div class="check-box" id="check-box" :class="{ 'no-bg': !settings.showBackground, 'show-outlines': settings.showOutlines, 'tool-select': store.tool === 'select' }">
-        <div id="check-box-print" :style="pageOffset" class="check-text" @click.self="store.selectedField = null">
+    <div class="check-box" id="check-box" :class="{ 'no-bg': !settings.showBackground, 'show-outlines': settings.showOutlines, 'tool-select': store.tool === 'select' }" @mousedown="startMarquee">
+        <div id="check-box-print" :style="pageOffset" class="check-text">
             <div v-bind="fld('holderName')" class="holder-name val">{{ account.holderName }}</div>
             <div v-bind="fld('holderAddress')" class="holder-address">
                 {{ account.address }}<br>
@@ -43,7 +43,9 @@
         </div>
 
         <!-- Millimetre grid: screen only, never printed, passes clicks through -->
-        <div v-if="settings.showGrid" class="mm-grid no-print" aria-hidden="true">
+        <div v-if="marquee" class="marquee no-print" :style="{ left: marquee.x0 + 'px', top: marquee.y0 + 'px', width: (marquee.x1 - marquee.x0) + 'px', height: (marquee.y1 - marquee.y0) + 'px' }"></div>
+
+        <div v-if="settings.showGrid" class="mm-grid no-print" aria-hidden="true" :style="{ backgroundSize: gridPx + 'px ' + gridPx + 'px' }">
             <span v-for="m in xMarks" :key="'x' + m.mm" class="mm-label" :style="{ left: m.px + 'px', top: '0px' }">{{ m.mm }}</span>
             <span v-for="m in yMarks" :key="'y' + m.mm" class="mm-label" :style="{ top: m.px + 'px', left: '0px' }">{{ m.mm }}</span>
         </div>
@@ -51,7 +53,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useAppStore, micrCheckNumber } from '../stores/app'
 import { formatMoney, amountInWords } from '../utilities'
 import { FIELDS, PX_PER_INCH, PX_PER_MM, CHECK_WIDTH } from '../checkLayout'
@@ -65,34 +67,110 @@ const account = computed(() => store.account)
 const xMarks = Array.from({ length: 22 }, (_, i) => ({ mm: i * 10, px: i * 10 * PX_PER_MM })).filter(m => m.px < CHECK_WIDTH)
 const yMarks = Array.from({ length: 9 }, (_, i) => ({ mm: i * 10, px: i * 10 * PX_PER_MM })).filter(m => m.px < 480)
 
-// Drag a field with the mouse (select tool). Converts screen pixels to canvas
-// pixels using the on-screen scale, so it works at any zoom.
+// Shift, Ctrl or Cmd add or remove fields from the selection instead of replacing it.
+const isAdditive = (e: MouseEvent) => e.shiftKey || e.ctrlKey || e.metaKey
+
+// Canvas px per screen px, so drags and marquees work at any zoom.
+function canvasScale (box: HTMLElement) {
+    return box.getBoundingClientRect().width / CHECK_WIDTH
+}
+
+// Drag a field (or every selected field, together). With snapping on, the
+// field under the mouse lands on the grid and the rest keep their spacing.
 function startFieldDrag (key: string, e: MouseEvent) {
     if (store.tool !== 'select' || e.button !== 0) return
     e.preventDefault()
     e.stopPropagation()
-    store.selectedField = key
+    if (isAdditive(e)) {
+        store.toggleFieldSelection(key)
+        return
+    }
+    if (!store.selectedFields.includes(key)) store.selectedFields = [key]
+    const group = [...store.selectedFields]
     const box = (e.currentTarget as HTMLElement).closest('.check-box') as HTMLElement | null
-    const scale = box ? box.getBoundingClientRect().width / CHECK_WIDTH : 1
+    const scale = box ? canvasScale(box) : 1
     const startX = e.clientX
     const startY = e.clientY
-    const orig = { ...(settings.fieldOffsets[key] || { x: 0, y: 0 }) }
+    const anchor = FIELDS[key]
+    const anchorOff = settings.fieldOffsets[key] || { x: 0, y: 0 }
+    const anchorStart = { x: anchor.left + anchorOff.x, y: anchor.top + anchorOff.y }
+    const origin: Record<string, { x: number, y: number }> = {}
+    for (const k of group) origin[k] = { ...(settings.fieldOffsets[k] || { x: 0, y: 0 }) }
+    let moved = false
     const move = (ev: MouseEvent) => {
-        settings.fieldOffsets = {
-            ...settings.fieldOffsets,
-            [key]: {
-                x: Math.round(orig.x + (ev.clientX - startX) / scale),
-                y: Math.round(orig.y + (ev.clientY - startY) / scale)
+        let dx = (ev.clientX - startX) / scale
+        let dy = (ev.clientY - startY) / scale
+        if (Math.abs(dx) + Math.abs(dy) > 2) moved = true
+        if (settings.snap) {
+            const step = settings.gridMm * PX_PER_MM
+            dx = Math.round((anchorStart.x + dx) / step) * step - anchorStart.x
+            dy = Math.round((anchorStart.y + dy) / step) * step - anchorStart.y
+        }
+        const next = { ...settings.fieldOffsets }
+        for (const k of group) {
+            next[k] = {
+                x: Math.round((origin[k].x + dx) * 10) / 10,
+                y: Math.round((origin[k].y + dy) * 10) / 10
             }
         }
+        settings.fieldOffsets = next
     }
     const up = () => {
         window.removeEventListener('mousemove', move)
         window.removeEventListener('mouseup', up)
+        // A plain click on one field of a group selects just that field
+        if (!moved && group.length > 1) store.selectedFields = [key]
     }
     window.addEventListener('mousemove', move)
     window.addEventListener('mouseup', up)
 }
+
+// Rubber-band selection: drag on empty check area to select every field the
+// box touches. A plain click on empty area clears the selection.
+const marquee = ref<{ x0: number, y0: number, x1: number, y1: number } | null>(null)
+
+function startMarquee (e: MouseEvent) {
+    if (store.tool !== 'select' || e.button !== 0) return
+    const box = e.currentTarget as HTMLElement
+    const rect = box.getBoundingClientRect()
+    const scale = canvasScale(box)
+    const toCanvas = (x: number, y: number) => ({ x: (x - rect.left) / scale, y: (y - rect.top) / scale })
+    const start = toCanvas(e.clientX, e.clientY)
+    const additive = isAdditive(e)
+    const before = [...store.selectedFields]
+    let moved = false
+    e.preventDefault()
+    const move = (ev: MouseEvent) => {
+        const p = toCanvas(ev.clientX, ev.clientY)
+        if (!moved && Math.hypot(p.x - start.x, p.y - start.y) < 4) return
+        moved = true
+        const r = {
+            x0: Math.min(start.x, p.x), y0: Math.min(start.y, p.y),
+            x1: Math.max(start.x, p.x), y1: Math.max(start.y, p.y)
+        }
+        marquee.value = r
+        const hit = [...box.querySelectorAll<HTMLElement>('[data-field]')].filter(el => {
+            const f = el.getBoundingClientRect()
+            const l = (f.left - rect.left) / scale
+            const t = (f.top - rect.top) / scale
+            const rt = (f.right - rect.left) / scale
+            const b = (f.bottom - rect.top) / scale
+            return l < r.x1 && rt > r.x0 && t < r.y1 && b > r.y0
+        }).map(el => el.dataset.field as string)
+        store.selectedFields = additive ? [...new Set([...before, ...hit])] : hit
+    }
+    const up = () => {
+        window.removeEventListener('mousemove', move)
+        window.removeEventListener('mouseup', up)
+        marquee.value = null
+        if (!moved && !additive) store.selectedFields = []
+    }
+    window.addEventListener('mousemove', move)
+    window.addEventListener('mouseup', up)
+}
+
+// Grid spacing in canvas px (the grid and the snap step use the same value)
+const gridPx = computed(() => settings.gridMm * PX_PER_MM)
 
 const cityLine = computed(() => {
     const a = account.value
@@ -117,14 +195,9 @@ function fld (key: string) {
     return {
         'data-field': key,
         title: store.tool === 'select' ? base.label : undefined,
-        class: ['fld', { selected: store.selectedField === key }],
+        class: ['fld', { selected: store.selectedFields.includes(key) }],
         style: { position: 'absolute' as const, top: base.top + off.y + 'px', left: base.left + off.x + 'px' },
-        onMousedown: (e: MouseEvent) => startFieldDrag(key, e),
-        onClick: (e: MouseEvent) => {
-            if (store.tool !== 'select') return
-            e.stopPropagation()
-            store.selectedField = key
-        }
+        onMousedown: (e: MouseEvent) => startFieldDrag(key, e)
     }
 }
 </script>
@@ -161,7 +234,12 @@ function fld (key: string) {
     background-image:
         linear-gradient(to right, rgba(220, 53, 69, .22) 1px, transparent 1px),
         linear-gradient(to bottom, rgba(220, 53, 69, .22) 1px, transparent 1px);
-    background-size: 28.161px 28.161px;
+}
+.marquee {
+    position: absolute;
+    border: 1px dashed #0d6efd;
+    background-color: rgba(13, 110, 253, .08);
+    pointer-events: none;
 }
 .mm-label {
     position: absolute;

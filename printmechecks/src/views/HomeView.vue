@@ -86,16 +86,21 @@ function onKey (e: KeyboardEvent) {
     if (ctrl && (e.key === '=' || e.key === '+')) { e.preventDefault(); zoomStep(1); return }
     if (ctrl && e.key === '-') { e.preventDefault(); zoomStep(-1); return }
     if (ctrl && e.key === '0') { e.preventDefault(); settings.zoom = 'fit'; return }
+    if (ctrl && e.key.toLowerCase() === 'a' && !typing(e)) {
+        e.preventDefault()
+        store.selectAllFields()
+        return
+    }
     if (typing(e) || ctrl || e.altKey) return
 
-    const sel = store.selectedField
+    const sel = store.selectedFields
     const step = e.shiftKey ? 10 : 1
     const moves: Record<string, [number, number]> = {
         ArrowUp: [0, -step], ArrowDown: [0, step], ArrowLeft: [-step, 0], ArrowRight: [step, 0]
     }
-    if (sel && moves[e.key]) {
+    if (sel.length && moves[e.key]) {
         e.preventDefault()
-        store.nudgeField(sel, ...moves[e.key])
+        for (const k of sel) store.nudgeField(k, ...moves[e.key])
     } else if (e.key === 'Escape') {
         store.selectedField = null
     } else if (e.key.toLowerCase() === 'v') {
